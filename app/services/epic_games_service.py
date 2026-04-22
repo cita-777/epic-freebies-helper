@@ -520,6 +520,35 @@ class EpicGames:
         await self._capture_purchase_debug(page, "checkout_challenge_probe", url)
         return True
 
+    async def _submit_place_order(self, payment_btn, url: str) -> None:
+        logger.debug(f"Submitting place order. {url=}")
+        try:
+            await payment_btn.click(timeout=5000)
+        except TimeoutError:
+            logger.warning(f"Standard Place Order click timed out, retrying with force. {url=}")
+            await payment_btn.click(force=True, timeout=5000)
+        await self.page.wait_for_timeout(3000)
+
+    async def _observe_checkout_outcome(self, page: Page, url: str, timeout_ms: int = 20000) -> str:
+        elapsed = 0
+
+        while elapsed < timeout_ms:
+            await self._handle_device_not_supported_modal(page, url, timeout_ms=1000)
+
+            if await self._is_checkout_security_check_visible(page):
+                return "security"
+
+            if await self._is_claimed_state(page, url):
+                return "claimed"
+
+            with suppress(Exception):
+                await self._active_purchase_container(page, place_order_timeout=500, confirm_timeout=500)
+
+            await page.wait_for_timeout(1000)
+            elapsed += 1500
+
+        return "checkout"
+
     async def _handle_instant_checkout(self, page: Page, url: str) -> bool:
         logger.info("🚀 Triggering Instant Checkout Flow...")
         agent = AgentV(page=page, agent_config=settings)
@@ -535,41 +564,51 @@ class EpicGames:
                 await self._capture_purchase_debug(page, "instant_checkout_not_reached", url)
                 return False
 
-            wpc, payment_btn = payload
-            logger.debug(f"Clicking payment button: {await payment_btn.text_content()}")
-            await payment_btn.click(force=True)
-            await page.wait_for_timeout(3000)
+            for attempt in range(1, 5):
+                if state == "claimed":
+                    logger.success(f"🎉 Instant checkout confirmed claim state - {url=}")
+                    return True
 
-            if await self._is_checkout_security_check_visible(page):
-                if not await self._resolve_checkout_security_check(page, agent, url):
-                    return False
-            else:
-                logger.debug("No checkout security check detected after Place Order")
-                with suppress(Exception):
-                    await self._probe_checkout_challenge(page, agent, url)
+                if state != "checkout":
+                    state, payload = await self._wait_for_purchase_state(page, url, timeout_ms=10000)
+                    if state == "claimed":
+                        logger.success(f"🎉 Instant checkout confirmed claim state after state refresh - {url=}")
+                        return True
+                    if state != "checkout" or payload is None:
+                        break
 
-            for _ in range(2):
-                await self._handle_device_not_supported_modal(page, url, timeout_ms=3000)
+                _wpc, payment_btn = payload
+                logger.debug(
+                    "Place Order submission cycle ({}/{}) | button_text={}",
+                    attempt,
+                    4,
+                    await payment_btn.text_content(),
+                )
+                await self._submit_place_order(payment_btn, url)
 
                 if await self._is_checkout_security_check_visible(page):
                     if not await self._resolve_checkout_security_check(page, agent, url):
                         return False
+                    outcome = await self._observe_checkout_outcome(page, url, timeout_ms=20000)
+                    logger.debug(f"Checkout outcome after solving security check: {outcome} | {url=}")
+                    if outcome == "claimed":
+                        logger.success(f"🎉 Instant checkout confirmed claim state after security check - {url=}")
+                        return True
+                    state = "checkout" if outcome == "checkout" else outcome
+                    payload = None
+                    continue
 
-                if await self._is_claimed_state(page, url):
-                    logger.success(f"🎉 Instant checkout confirmed claim state - {url=}")
-                    return True
-
+                logger.debug("No explicit checkout security check detected after Place Order")
                 with suppress(Exception):
-                    if await payment_btn.is_visible(timeout=1000):
-                        await payment_btn.click(force=True)
-                        await page.wait_for_timeout(2000)
+                    await self._probe_checkout_challenge(page, agent, url)
 
-                state, _ = await self._wait_for_purchase_state(page, url, timeout_ms=10000)
-                if state == "claimed":
-                    logger.success(f"🎉 Instant checkout confirmed claim state after retry - {url=}")
+                outcome = await self._observe_checkout_outcome(page, url, timeout_ms=20000)
+                logger.debug(f"Checkout outcome after Place Order: {outcome} | {url=}")
+                if outcome == "claimed":
+                    logger.success(f"🎉 Instant checkout confirmed claim state after Place Order - {url=}")
                     return True
-                if state != "checkout":
-                    break
+                state = "checkout" if outcome == "checkout" else outcome
+                payload = None
 
             logger.warning(f"Instant checkout ended without a confirmed claim state - {url=}")
             await self._capture_purchase_debug(page, "instant_checkout_unconfirmed", url)
