@@ -196,6 +196,30 @@ class EpicGames:
         logger.info(f"Saved purchase debug screenshot - reason={reason} url={url}")
 
     @staticmethod
+    async def _handle_device_not_supported_modal(page: Page, url: str) -> bool:
+        modal_text = page.locator("text=Device not supported").first
+        continue_btn = page.locator("//button[.//span[text()='Continue'] or normalize-space(text())='Continue']").first
+
+        try:
+            if not await modal_text.is_visible(timeout=5000):
+                return False
+        except Exception:
+            return False
+
+        logger.warning(f"Device not supported modal detected - attempting to continue. {url=}")
+        await EpicGames._capture_purchase_debug(page, "device_not_supported", url)
+
+        try:
+            await continue_btn.click(timeout=5000)
+            await page.wait_for_timeout(2000)
+            logger.success("Dismissed device not supported modal")
+            return True
+        except Exception as err:
+            logger.warning(f"Failed to dismiss device not supported modal: {err}")
+            await EpicGames._capture_purchase_debug(page, "device_not_supported_click_failed", url)
+            return False
+
+    @staticmethod
     async def _log_purchase_button_context(page: Page, purchase_btn, url: str):
         btn_text = (await purchase_btn.text_content() or "").strip()
         disabled = await purchase_btn.get_attribute("disabled")
@@ -269,6 +293,7 @@ class EpicGames:
         agent = AgentV(page=page, agent_config=settings)
 
         try:
+            await self._handle_device_not_supported_modal(page, page.url)
             wpc, payment_btn = await self._active_purchase_container(page)
             logger.debug(f"Clicking payment button: {await payment_btn.text_content()}")
             await payment_btn.click(force=True)
@@ -392,10 +417,12 @@ class EpicGames:
             logger.debug(f"⚡️ Logic: Aggressive Click (Text: {btn_text}) - {url=}")
             try:
                 await purchase_btn.click(timeout=10000)
+                await self._handle_device_not_supported_modal(page, url)
             except TimeoutError:
                 logger.warning(f"Standard click timed out, retrying with force click - {url=}")
                 await self._capture_purchase_debug(page, "click_timeout", url)
                 await purchase_btn.click(force=True, timeout=10000)
+                await self._handle_device_not_supported_modal(page, url)
             except Exception:
                 await self._capture_purchase_debug(page, "click_failed", url)
                 raise
