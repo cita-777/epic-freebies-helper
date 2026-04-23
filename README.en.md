@@ -11,13 +11,7 @@
   </p>
 </div>
 
-Documentation language:
-
-- [简体中文 README](README.md)
-- English (this page)
-- [Advanced Guide](docs/advanced.en.md)
-- [Development Log (2026-04-22)](docs/development-log-2026-04-22.en.md)
-- [GitHub Actions Guide](.github/workflows/README.en.md)
+[🇺🇸 English](README.en.md) | [🇨🇳 中文文档](README.md)
 
 This project is aimed at regular users who want to auto-claim Epic Games weekly freebies. The default setup runs on GitHub Actions, so you do not need a server or a machine that stays online all the time. If you have a GitHub account, you can get started directly.
 

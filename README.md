@@ -11,13 +11,7 @@
   </p>
 </div>
 
-文档语言：
-
-- 简体中文（当前页）
-- [English README](README.en.md)
-- [English Advanced Guide](docs/advanced.en.md)
-- [English Development Log (2026-04-22)](docs/development-log-2026-04-22.en.md)
-- [English GitHub Actions Guide](.github/workflows/README.en.md)
+[🇨🇳 中文文档](README.md) | [🇺🇸 English](README.en.md)
 
 面向普通用户的 Epic 周免自动领取项目，默认通过 GitHub Actions 运行，不需要服务器或本地常驻环境；只要有 GitHub 账号，就可以直接开始。
 
